@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BIC Tool Tracker — ระบบยืม-คืนเครื่องมือ</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f4f8ff; --surface: #ffffff; --surface2: #eef4ff; --border: #d6e4ff;
+    --accent: #2563eb; --green: #2ecc71; --red: #e8523a; --blue: #4a9eff;
+    --text: #0f172a; --text-dim: #64748b; --text-mid: #334155;
+    --radius: 8px; --shadow: 0 4px 20px rgba(0,0,0,0.1);
+  }
+  * { box-sizing: border-box; margin:0; padding:0; }
+  body { background: var(--bg); color: var(--text); font-family: 'IBM Plex Sans Thai', sans-serif; line-height: 1.6; font-size: 15px; }
+  .header { background: white; border-bottom: 3px solid var(--accent); padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; box-shadow: var(--shadow); }
+  .container { max-width: 1100px; margin: 25px auto; padding: 0 20px; }
+  .form-card { background: white; border: 1px solid var(--border); border-radius: var(--radius); padding: 25px; margin-bottom: 25px; box-shadow: var(--shadow); }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .form-group.full { grid-column: 1 / -1; }
+  label { font-size: 13px; font-weight: 600; color: var(--text-dim); margin-bottom: 6px; display: block; }
+  input, select { width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 15px; }
+  .borrow-item-row { display: grid; grid-template-columns: 2fr 3fr 80px; gap: 12px; margin-bottom: 12px; align-items: end; }
+  .btn { padding: 12px 24px; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 15px; }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-danger { background: var(--red); color: white; }
+  .toast { position: fixed; bottom: 20px; right: 20px; background: #333; color: white; padding: 14px 20px; border-radius: 6px; z-index: 1000; display: none; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <strong>BIC Tool Tracker</strong> — ระบบยืม-คืนเครื่องมือ
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="form-card">
+    <h2>🔧 ยืมเครื่องมือ (Borrow)</h2>
+    
+    <div class="form-grid">
+      <div class="form-group">
+        <label>ชื่อผู้ยืม *</label>
+        <input type="text" id="borrow_name" placeholder="กรอกชื่อ-นามสกุล">
+      </div>
+      <div class="form-group">
+        <label>แผนก *</label>
+        <select id="borrow_dept">
+          <option value="">— เลือกแผนก —</option>
+          <option value="ME">ME - Mechanical Engineer</option>
+          <option value="EE">EE - Electrical Engineer</option>
+          <option value="CI">CI - Control & Instrument Engineer</option>
+        </select>
+      </div>
+
+      <div class="form-group full">
+        <label>รายการเครื่องมือ *</label>
+        <div id="borrow-items"></div>
+        <button type="button" class="btn btn-primary" onclick="addBorrowRow()" style="margin-top:8px;">＋ เพิ่มรายการ</button>
+      </div>
+
+      <div class="form-group">
+        <label>กำหนดคืน *</label>
+        <input type="time" id="borrow_due" value="17:00">
+      </div>
+    </div>
+
+    <button onclick="submitBorrow()" class="btn btn-primary" style="width:100%; margin-top:20px;">✅ ยืนยันการยืม</button>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+// ==================== QR Code Support ====================
+function handleDeepLink() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const assetId = urlParams.get('asset');
+  
+  if (assetId) {
+    setTimeout(() => {
+      addBorrowRowWithAsset(assetId.toUpperCase());
+      showToast(`สแกน QR Code สำเร็จ: ${assetId.toUpperCase()}`, 4000);
+    }, 600);
+  }
+}
+
+function addBorrowRowWithAsset(asset = '') {
+  const wrap = document.getElementById('borrow-items');
+  const row = document.createElement('div');
+  row.className = 'borrow-item-row';
+  row.innerHTML = `
+    <input type="text" class="item-asset" value="${asset}" placeholder="Asset ID">
+    <input type="text" class="item-tool" placeholder="ชื่อเครื่องมือ">
+    <button type="button" class="btn btn-danger" onclick="this.closest('.borrow-item-row').remove()">ลบ</button>
+  `;
+  wrap.appendChild(row);
+}
+
+function addBorrowRow() {
+  addBorrowRowWithAsset('');
+}
+
+// ==================== Submit Borrow ====================
+function submitBorrow() {
+  const name = document.getElementById('borrow_name').value.trim();
+  const dept = document.getElementById('borrow_dept').value;
+  const due = document.getElementById('borrow_due').value;
+  const rows = document.querySelectorAll('#borrow-items .borrow-item-row');
+
+  if (!name || !dept) {
+    showToast('กรุณากรอกชื่อผู้ยืมและแผนก', 3000);
+    return;
+  }
+  if (rows.length === 0) {
+    showToast('กรุณาเพิ่มรายการเครื่องมืออย่างน้อย 1 รายการ', 3000);
+    return;
+  }
+
+  let successCount = 0;
+  rows.forEach(row => {
+    const asset = row.querySelector('.item-asset').value.trim();
+    const tool = row.querySelector('.item-tool').value.trim();
+    if (asset && tool) successCount++;
+  });
+
+  if (successCount === 0) {
+    showToast('กรุณากรอกข้อมูลเครื่องมือให้ครบ', 3000);
+    return;
+  }
+
+  showToast(`✅ ยืมเครื่องมือสำเร็จ ${successCount} รายการ`, 5000);
+  
+  // รีเซ็ตฟอร์ม
+  document.getElementById('borrow_name').value = '';
+  document.getElementById('borrow-items').innerHTML = '';
+  addBorrowRow();
+}
+
+function showToast(message, duration = 3000) {
+  const toast = document.getElementById('toast');
+  toast.textContent = message;
+  toast.style.display = 'block';
+  setTimeout(() => {
+    toast.style.display = 'none';
+  }, duration);
+}
+
+// ==================== INIT ====================
+window.onload = function() {
+  addBorrowRow();     // เริ่มต้น 1 แถว
+  handleDeepLink();   // ตรวจสอบ QR Code
+};
+</script>
+</body>
+</html>
